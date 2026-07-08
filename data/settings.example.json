@@ -1,0 +1,9 @@
+{
+  "whitelist": [],
+  "watchlist": [],
+  "proxyWhitelist": ["YourIGN"],
+  "discordWebhookUrl": "",
+  "monitorIgn": "MonitorBot",
+  "retentionDays": 30,
+  "ownerIgn": "YourIGN"
+}

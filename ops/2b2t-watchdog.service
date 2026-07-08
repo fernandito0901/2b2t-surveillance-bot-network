@@ -1,0 +1,8 @@
+[Unit]
+Description=2b2t surveillance node heartbeat (alerts Discord on outage/recovery)
+After=2b2t-app.service
+
+[Service]
+Type=oneshot
+User=admin
+ExecStart=/home/admin/2b2t/ops/watchdog.sh

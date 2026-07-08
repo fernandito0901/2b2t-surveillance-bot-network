@@ -1,0 +1,29 @@
+{
+  "name": "2b2tmanager",
+  "version": "1.0.0",
+  "description": "2b2t Nether Highway Surveillance Bot Network",
+  "license": "MIT",
+  "author": "fernandito0901",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js --dev",
+    "test": "node test/run.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mineflayer": "^4.37.1",
+    "socks": "^2.8.9",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fernandito0901/2b2t-surveillance-bot-network.git"
+  }
+}

@@ -1,0 +1,6 @@
+# SOCKS5 proxy pool. One proxy per line, in the format:
+#   host:port:username:password:country
+# Auto-synced from the Webshare API when WEBSHARE_API_KEY is set; this file is
+# only a fallback / manual override. Do NOT commit real proxies.
+203.0.113.10:1080:proxyuser:proxypass:US
+198.51.100.22:1080:proxyuser:proxypass:CA

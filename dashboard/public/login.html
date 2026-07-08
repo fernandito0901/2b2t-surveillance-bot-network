@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in — 2b2t Surveillance</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #08080d; color: #e6e6f2; font-family: 'Inter', sans-serif;
+      background-image: linear-gradient(rgba(255,255,255,.012) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.012) 1px, transparent 1px);
+      background-size: 44px 44px;
+    }
+    .card {
+      width: 360px; background: #0d0d16; border: 1px solid #1d1d2e;
+      border-radius: 14px; padding: 30px 28px;
+    }
+    .logo { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 10px; background: #14141f; border: 1px solid #2a2a40;
+      display: flex; align-items: center; justify-content: center; color: #8b83e6; font-size: 19px;
+    }
+    h1 { font-size: 15px; font-weight: 600; margin: 0; }
+    .logo .sub { color: #6b6b85; font-size: 11px; margin-top: 1px; }
+    label { display: block; font-size: 12px; color: #9a9ab5; margin: 16px 0 6px; }
+    input {
+      width: 100%; padding: 10px 12px; background: #08080d; color: #e6e6f2;
+      border: 1px solid #2a2a40; border-radius: 8px; font-size: 14px; outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: #6366f1; }
+    button {
+      width: 100%; margin-top: 24px; padding: 11px; background: #534ab7; color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s;
+    }
+    button:hover { background: #6366f1; }
+    button:disabled { opacity: .6; cursor: default; }
+    .err { color: #f87171; font-size: 13px; margin-top: 14px; min-height: 18px; text-align: center; }
+  </style>
+</head>
+<body>
+  <form class="card" id="login-form">
+    <div class="logo">
+      <span class="logo-icon">◈</span>
+      <div><h1>2b2t Surveillance</h1><div class="sub">Highway watch · sign in</div></div>
+    </div>
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" autofocus required>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="btn">Sign in</button>
+    <div class="err" id="err"></div>
+  </form>
+  <script>
+    const f = document.getElementById('login-form');
+    const btn = document.getElementById('btn');
+    const err = document.getElementById('err');
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = ''; btn.disabled = true; btn.textContent = 'Signing in…';
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: document.getElementById('u').value, password: document.getElementById('p').value }),
+        });
+        if (res.ok) { location.href = '/'; return; }
+        const j = await res.json().catch(() => ({}));
+        err.textContent = j.error || 'Sign in failed';
+      } catch (e2) { err.textContent = 'Network error'; }
+      btn.disabled = false; btn.textContent = 'Sign in';
+    });
+  </script>
+</body>
+</html>

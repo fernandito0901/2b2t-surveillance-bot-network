@@ -1,0 +1,11 @@
+# === 2b2t dashboard - STAGING (HTTP only) ==================================
+# No subdomain configured yet. Serves the dashboard over plain HTTP on :80 and
+# holds the port for the Let's Encrypt HTTP-01 challenge once a domain is added.
+#
+# TO GO LIVE WITH HTTPS:  bash ~/2b2t/ops/enable-https.sh <subdomain>
+# That rewrites /etc/caddy/Caddyfile from Caddyfile.template with the real
+# hostname, and Caddy then auto-issues + auto-renews the cert.
+:80 {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3000
+}

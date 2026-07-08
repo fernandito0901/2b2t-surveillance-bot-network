@@ -1,0 +1,32 @@
+# ── Secrets & environment ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Dependencies ──
+node_modules/
+
+# ── Logs ──
+*.log
+*.log.*
+logs/
+
+# ── Runtime data & secrets (everything in data/ except example templates) ──
+data/*
+!data/.gitkeep
+!data/*.example.json
+!data/*.example.txt
+
+# ── Backups / scratch ──
+.backup-*/
+*.bak
+*.bak-*
+*.tmp
+
+# ── OS / editor cruft ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

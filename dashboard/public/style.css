@@ -1,0 +1,652 @@
+/* ============================================
+   2b2t Highway Surveillance — command-center UI
+   ============================================ */
+
+:root {
+  --bg: #08080d;
+  --bg-1: #0d0d16;       /* panels */
+  --bg-2: #14141f;       /* cards */
+  --bg-3: #1a1a28;       /* hover / inputs */
+  --bg-glass: rgba(13, 13, 22, 0.82);
+
+  --text: #e6e6f2;
+  --text-2: #9a9ab5;
+  /* --text-3/--text-4 raised for legibility (WCAG contrast) on the near-black bg. */
+  --text-3: #8b8ba8;
+  --text-4: #6d6d86;
+
+  --green: #22c55e;
+  --blue: #38bdf8;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --indigo: #6366f1;
+  --indigo-2: #534ab7;
+
+  --border: #1d1d2e;
+  --border-2: #2a2a40;
+
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 13px;
+
+  --font: 'Inter', -apple-system, system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --t: 160ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Semantic state tokens — ONE color per fleet state, used everywhere a state
+     appears (hero dots, bot cards, map legend), so "queuing" is always the same blue. */
+  --state-inworld: var(--green);
+  --state-queue: #06b6d4;
+  --state-warn: var(--amber);
+  --state-threat: var(--red);
+  --state-offline: #6d6d86;
+}
+
+/* Keyboard-visible focus ring on every interactive element (mouse clicks stay clean). */
+:focus-visible { outline: 2px solid var(--indigo); outline-offset: 2px; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none; z-index: 0;
+}
+
+#app { position: relative; z-index: 1; height: 100vh; display: flex; flex-direction: column; }
+
+/* ── Header ──────────────────────────────── */
+#header {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 11px 22px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.header-left { display: flex; align-items: center; gap: 14px; }
+.logo { display: flex; align-items: center; gap: 11px; }
+.logo-icon {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; color: #8b83e6;
+}
+.logo h1 { font-size: 15px; font-weight: 600; letter-spacing: .1px; color: var(--text); }
+.logo .sub { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+
+.badge {
+  font-family: var(--mono); font-size: 11px; color: var(--text-2);
+  background: var(--bg-2); padding: 5px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+}
+
+.header-right { display: flex; align-items: center; gap: 12px; }
+.connection-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.connection-indicator .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); transition: background var(--t); }
+.connection-indicator.connected .dot { background: var(--green); }
+.connection-indicator.reconnecting { color: var(--amber); }
+.connection-indicator.reconnecting .dot { background: var(--amber); animation: ws-pulse 1s ease-in-out infinite; }
+@keyframes ws-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+/* While the socket is down, dim + badge every panel so the operator can't mistake
+   an hours-old snapshot for live data. */
+/* Dim stale panels on disconnect, but NOT the map panel — its ::after "STALE" badge must
+   stay full-opacity (a pseudo-element inherits its parent's composited opacity). */
+.ws-stale .panel:not(.map-panel), .ws-stale .kpi-strip, .ws-stale .view-wrap { opacity: .5; transition: opacity .3s; }
+.ws-stale .map-panel::after {
+  content: 'STALE — reconnecting'; position: absolute; top: 12px; right: 12px; z-index: 15;
+  font-size: 10px; font-weight: 600; letter-spacing: .4px; color: #2a1c02;
+  background: var(--amber); padding: 3px 8px; border-radius: var(--r-sm);
+}
+.map-panel { position: relative; }
+
+/* Pill navigation (wraps the tab buttons) */
+.nav-pills {
+  display: flex; gap: 3px;
+  background: var(--bg-1); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 3px;
+}
+.tab-btn {
+  background: transparent; border: none; color: var(--text-2);
+  font-family: var(--font); font-size: 12.5px; font-weight: 500;
+  padding: 6px 13px; border-radius: var(--r-sm); cursor: pointer;
+  transition: all var(--t); white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text); background: var(--bg-3); }
+.tab-btn.active { background: var(--indigo-2); color: #fff; }
+
+/* ── KPI strip ───────────────────────────── */
+/* Hero (fleet status) takes 2 columns; the 3 stat cards take 1 each. */
+.kpi-strip {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px;
+  padding: 14px 22px 0; flex-shrink: 0;
+}
+.kpi-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-md); padding: 11px 14px; }
+
+/* Fleet-Status hero — the one glance that answers "is the network okay?" */
+.kpi-hero { display: flex; flex-direction: column; justify-content: space-between; gap: 4px; cursor: pointer; transition: border-color var(--t); }
+.kpi-hero:hover { border-color: var(--border-2); }
+.hero-counts { display: flex; gap: 16px; align-items: baseline; margin-top: 2px; flex-wrap: wrap; }
+.hc { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); white-space: nowrap; }
+.hc b { font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -.3px; font-style: normal; }
+/* State-colored hero counts — the number itself carries the state, not just the dot. */
+#hero-inworld { color: var(--state-inworld); }
+#hero-queue { color: var(--state-queue); }
+#hero-offline { color: var(--text-3); }
+.hc-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.hero-verdict { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hero-verdict.warn { color: var(--state-warn); }
+.hero-verdict.good { color: var(--state-inworld); }
+
+/* Clickable stat cards (click-through to the relevant panel/tab) */
+.kpi-click { cursor: pointer; transition: border-color var(--t), background var(--t); }
+.kpi-click:hover { border-color: var(--border-2); background: var(--bg-2); }
+
+/* Brief highlight on the panel a KPI click-through lands on. */
+.panel.flash { animation: panel-flash 1.2s ease-out; }
+@keyframes panel-flash { 0% { border-color: var(--indigo); box-shadow: 0 0 0 1px var(--indigo); } 100% { border-color: var(--border); box-shadow: none; } }
+.kpi-label { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+.kpi-label .ti { font-size: 14px; }
+.kpi-value { font-size: 22px; font-weight: 600; margin-top: 4px; letter-spacing: -.3px; }
+.kpi-value.green { color: var(--green); }
+.kpi-value.blue { color: var(--blue); }
+.kpi-value.red { color: var(--red); }
+.kpi-value.amber { color: var(--amber); }
+
+/* ── Main layout ─────────────────────────── */
+#main {
+  /* Rail scales with the viewport (340–420px) instead of a hard 400px, so the map
+     gets the extra width on smaller screens without a jarring breakpoint jump. */
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 420px); gap: 14px;
+  padding: 14px 22px; flex: 1; min-height: 0; overflow: hidden;
+}
+
+/* ── Panels ──────────────────────────────── */
+.panel {
+  background: var(--bg-1); border: 1px solid var(--border);
+  border-radius: var(--r-lg); display: flex; flex-direction: column;
+  overflow: hidden; transition: border-color var(--t);
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+/* Micro-label headers: quieter than the content they caption (the data is the star). */
+.panel-header h2 {
+  font-size: 11px; font-weight: 600; color: var(--text-2);
+  letter-spacing: .8px; text-transform: uppercase;
+}
+/* The map header carries the control cluster — let it wrap instead of overflowing. */
+.map-panel .panel-header { flex-wrap: wrap; gap: 8px; }
+.panel-body { padding: 10px; flex: 1; min-height: 0; }
+.panel-body.scrollable { overflow-y: auto; }
+.panel-body.scrollable::-webkit-scrollbar, .scrollable::-webkit-scrollbar { width: 7px; }
+.panel-body.scrollable::-webkit-scrollbar-track, .scrollable::-webkit-scrollbar-track { background: transparent; }
+.panel-body.scrollable::-webkit-scrollbar-thumb, .scrollable::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+
+.right-panels { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow: hidden; }
+.right-panels .panel { flex: 1; min-height: 0; }
+
+/* Add-account progress / device-code prompt (in the Bot Status panel) — takes no
+   space until the flow writes into it. */
+#add-account-status:not(:empty) {
+  padding: 10px 14px; font-size: 13px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+
+/* ── Map ─────────────────────────────────── */
+.map-panel { display: flex; flex-direction: column; }
+.map-container {
+  flex: 1; position: relative; min-height: 0; overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, #101022, #08080f);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+}
+/* Scope to the map canvas only (NOT the #map-radar sweep canvas) and lift it above the radar
+   (z-index:1) so the sweep renders UNDER the highways/markers like the original, not tinting them. */
+#nether-map { width: 100%; height: 100%; display: block; touch-action: none; position: relative; z-index: 2; }
+/* Radar sweep for the "on watch" (fleet-queuing) state — CSS/compositor-animated (rotation
+   only) so it needs NO perpetual canvas rAF (which pegged CPU and blocked the page from ever
+   going idle). It's a circle CENTRED ON SPAWN: app.js positions/sizes it at spawn's screen
+   point on every render, so it follows spawn as you pan/zoom instead of sticking to the
+   viewport centre. One bright leading wedge in a conic gradient, rotated forever. */
+.map-radar {
+  position: absolute; left: 0; top: 0; width: 0; height: 0; display: none;
+  pointer-events: none; z-index: 1; will-change: transform;
+  animation: radar-sweep 11s linear infinite;
+}
+.map-radar.show { display: block; }
+@keyframes radar-sweep { to { transform: rotate(1turn); } }
+/* Under prefers-reduced-motion we halt the sweep rotation (keyframes stay defined); the baked
+   static rings rendered into the map canvas still give a coherent static radar cue, so the
+   stopped sweep reads as intentional rather than broken. */
+@media (prefers-reduced-motion: reduce) { .map-radar { animation: none; } }
+.map-controls { display: flex; gap: 4px; align-items: center; }
+/* applyRoleUI toggles [data-role] elements with el.style.display = '' (not 'flex'), which
+   erases the inline display:flex on this row and drops it to display:block (vertical stack).
+   Give it a stylesheet flex fallback so trusted+ users get the intended inline layout. */
+.activity-manage { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.hover-coords {
+  position: absolute; top: 12px; left: 12px;
+  background: var(--bg-glass); backdrop-filter: blur(8px);
+  padding: 6px 10px; border-radius: var(--r-sm); border: 1px solid var(--border-2);
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  pointer-events: none; opacity: 0; transition: opacity .2s; z-index: 10;
+}
+.map-container:hover .hover-coords, .hover-coords.show { opacity: 1; }
+
+/* On-screen zoom controls overlaid on a canvas (thumb-reachable on touch). */
+.map-zoom {
+  position: absolute; right: 12px; bottom: 12px; z-index: 12;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.map-zoom .zbtn {
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  font-size: 19px; font-weight: 600; line-height: 1;
+  background: var(--bg-glass); backdrop-filter: blur(8px);
+  color: var(--text); border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  cursor: pointer; transition: all var(--t); touch-action: manipulation;
+}
+.map-zoom .zbtn:hover { background: var(--bg-3); border-color: var(--indigo); }
+.map-zoom .zbtn:active { transform: scale(.94); }
+
+/* Explanatory overlay for the (often empty) Overview map. */
+.map-empty {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  max-width: 78%; text-align: center; z-index: 8; pointer-events: none;
+  font-size: 12.5px; line-height: 1.5; color: var(--text-2);
+  background: var(--bg-glass); backdrop-filter: blur(6px);
+  border: 1px solid var(--border-2); border-radius: var(--r-md); padding: 12px 16px;
+}
+.map-tooltip {
+  position: absolute; background: var(--bg-glass); backdrop-filter: blur(8px);
+  padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border-2);
+  color: var(--text); z-index: 20; max-width: 250px; max-height: 220px;
+  overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.5); font-size: 11px;
+}
+.map-tooltip h4 { font-size: 12px; margin-bottom: 6px; color: var(--red); border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.map-tooltip ul { list-style: none; }
+.map-tooltip li { margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; }
+.map-tooltip .time { color: var(--text-3); }
+.hidden { display: none !important; }
+
+/* ── Time scrubber (map replay) ────────────── */
+.time-scrub {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; border-top: 1px solid var(--border);
+}
+.time-scrub input[type=range] {
+  flex: 1; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px;
+  background: var(--bg-3); outline: none; cursor: pointer; min-width: 60px;
+}
+.time-scrub input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--indigo); border: 2px solid rgba(255,255,255,.25); cursor: grab;
+}
+.time-scrub input[type=range]::-moz-range-thumb {
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--indigo); border: 2px solid rgba(255,255,255,.25); cursor: grab;
+}
+.scrub-label {
+  font-family: var(--mono); font-size: 11px; color: var(--state-inworld);
+  min-width: 118px; text-align: right; white-space: nowrap;
+}
+/* While scrubbed into the past the label is a timestamp, not the LIVE badge. */
+.time-scrub.scrubbing .scrub-label { color: var(--state-queue); }
+
+/* Legend as a glass chip ON the map (bottom-left) — the old full-width row below the
+   canvas cost the map ~40px of height for six labels. Stays clear of the zoom stack
+   (bottom-right) and under tooltips (z 20). */
+.map-legend {
+  position: absolute; left: 12px; bottom: 12px; z-index: 9;
+  display: flex; gap: 10px; flex-wrap: wrap; max-width: calc(100% - 76px);
+  padding: 6px 10px; font-size: 10.5px; color: var(--text-2);
+  background: var(--bg-glass); backdrop-filter: blur(8px);
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  pointer-events: none;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.legend-line { width: 14px; height: 2px; display: inline-block; border-radius: 1px; }
+
+/* ── Bot / list cards ────────────────────── */
+.bot-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 13px; border-radius: var(--r-md); background: var(--bg-2);
+  margin-bottom: 7px; border: 1px solid transparent; transition: all var(--t);
+}
+.bot-card:hover { border-color: var(--border-2); background: var(--bg-3); }
+.bot-card .status-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: var(--text-4); }
+.bot-card .status-dot.monitoring { background: var(--green); }
+.bot-card .status-dot.in_queue { background: var(--blue); }
+.bot-card .status-dot.connecting, .bot-card .status-dot.scheduled { background: var(--blue); opacity: .5; }
+.bot-card .status-dot.disconnected, .bot-card .status-dot.stopped { background: var(--text-4); }
+.bot-card .bot-info { flex: 1; min-width: 0; }
+.bot-card .bot-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bot-card .bot-detail { font-size: 11px; color: var(--text-2); font-family: var(--mono); }
+.bot-card .bot-actions { display: flex; gap: 4px; opacity: .55; transition: opacity var(--t); }
+.bot-card:hover .bot-actions { opacity: 1; }
+
+/* ── Activity items ──────────────────────── */
+.activity-item {
+  display: flex; gap: 10px; padding: 8px 11px; border-radius: var(--r-sm);
+  margin-bottom: 5px; font-size: 12px; background: var(--bg-2);
+  /* Neutral accent — a routine pass is information, not an alarm. Watchlist hits
+     override this with the amber border inline; the red name still reads "contact". */
+  border-left: 2px solid var(--border-2); animation: slide-in .25s ease-out;
+}
+@keyframes slide-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+/* Feed items with a logged position pan the map camera on click. */
+.activity-item.clickable { cursor: pointer; transition: background var(--t), border-color var(--t); }
+.activity-item.clickable:hover { background: var(--bg-3); }
+.activity-item .activity-time { font-family: var(--mono); font-size: 10px; color: var(--text-3); white-space: nowrap; flex-shrink: 0; }
+.activity-item .activity-text { flex: 1; color: var(--text); min-width: 0; }
+.activity-item .player-name { color: #f08a8a; font-weight: 600; }
+.activity-item .coords { font-family: var(--mono); color: var(--text-2); font-size: 11px; }
+
+/* ── Forms ───────────────────────────────── */
+.input {
+  flex: 1; padding: 9px 12px; font-size: 13px; font-family: var(--font);
+  background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  color: var(--text); outline: none; transition: border-color var(--t);
+}
+.input:focus { border-color: var(--indigo); }
+.input::placeholder { color: var(--text-4); }
+.input-sm {
+  padding: 6px 10px; font-size: 11.5px; font-family: var(--font);
+  background-color: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: var(--r-sm); color: var(--text); outline: none;
+}
+.input-sm:focus { border-color: var(--indigo); }
+.input-sm::placeholder { color: var(--text-4); }
+select.input, select.input-sm {
+  cursor: pointer; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a9ab5' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+}
+select.input { padding-right: 30px; }
+select.input-sm { padding-right: 26px; }
+
+/* ── Buttons ─────────────────────────────── */
+.btn {
+  padding: 9px 16px; font-size: 13px; font-weight: 600; font-family: var(--font);
+  background: var(--indigo-2); color: #fff; border: none; border-radius: var(--r-sm);
+  cursor: pointer; transition: all var(--t); width: 100%;
+}
+.btn:hover { background: var(--indigo); }
+.btn:active { transform: scale(.99); }
+.btn-sm {
+  padding: 5px 11px; font-size: 11px; font-weight: 500;
+  background: var(--bg-2); color: var(--text-2); border: 1px solid var(--border-2);
+  border-radius: var(--r-sm); cursor: pointer; transition: all var(--t);
+}
+.btn-sm:hover { background: var(--bg-3); color: var(--text); border-color: var(--border-2); }
+.btn-sm.active { background: var(--indigo-2); color: #fff; border-color: var(--indigo-2); }
+.btn-icon {
+  width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 600; background: var(--bg-2); color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: var(--r-sm); cursor: pointer; transition: all var(--t);
+}
+.btn-icon:hover { background: var(--bg-3); color: var(--text); }
+
+/* Segmented control — groups exclusive choices (dimension) and layer toggles so the
+   map header reads as three clusters, not nine sibling buttons. */
+.seg {
+  display: flex; gap: 2px; padding: 2px;
+  background: var(--bg-2); border: 1px solid var(--border-2); border-radius: var(--r-sm);
+}
+.seg-btn {
+  border: none; background: transparent; color: var(--text-2);
+  font-family: var(--font); font-size: 11px; font-weight: 500;
+  padding: 4px 9px; border-radius: 5px; cursor: pointer; transition: all var(--t);
+  white-space: nowrap;
+}
+.seg-btn:hover { color: var(--text); background: var(--bg-3); }
+.seg-btn.active { background: var(--indigo-2); color: #fff; }
+.btn-danger {
+  background: transparent; border: 1px solid #5a2a2a; color: var(--red);
+  padding: 4px 8px; font-size: 10px; border-radius: var(--r-sm); cursor: pointer; transition: all var(--t);
+}
+.btn-danger:hover { background: var(--red); color: #fff; border-color: var(--red); }
+.btn-launch {
+  background: transparent; border: 1px solid #1f5132; color: var(--green);
+  padding: 4px 8px; font-size: 10px; border-radius: var(--r-sm); cursor: pointer; transition: all var(--t);
+}
+.btn-launch:hover { background: var(--green); color: #04210f; border-color: var(--green); }
+.btn-warning {
+  background: transparent; border: 1px solid #5a4514; color: var(--amber);
+  padding: 4px 8px; font-size: 10px; border-radius: var(--r-sm); cursor: pointer; transition: all var(--t);
+}
+.btn-warning:hover { background: var(--amber); color: #2a1c02; border-color: var(--amber); }
+
+/* ── Misc ────────────────────────────────── */
+.count {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: #a89ef0;
+  background: rgba(99,102,241,.16); padding: 2px 9px; border-radius: 10px;
+}
+.empty-state { text-align: center; padding: 22px; color: var(--text-4); font-size: 13px; }
+
+/* role-gated chips (avatars/badges) used by Admin/Intel render */
+.avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+}
+.role-badge { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 2px 8px; border-radius: 6px; border: 1px solid; vertical-align: middle; }
+.role-owner { color: #c7b6ff; background: #241f3a; border-color: #4b3f8a; }
+.role-admin { color: #a89ef0; background: #1e1b30; border-color: #35305a; }
+.role-trusted { color: #e7c46a; background: #241e10; border-color: #4a3d18; }
+.role-viewer { color: var(--text-2); background: var(--bg-2); border-color: var(--border-2); }
+
+/* ── Admin page (dashboard users) ── */
+.admin-stats { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.admin-stat { flex: 1; min-width: 88px; background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; }
+.admin-stat-n { font-family: var(--mono); font-size: 24px; font-weight: 700; line-height: 1; }
+.admin-stat-l { font-size: 11px; color: var(--text-3); text-transform: uppercase; letter-spacing: .5px; margin-top: 5px; }
+
+.admin-add { margin-bottom: 18px; }
+.admin-add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.admin-add-row .input { flex: 1; min-width: 130px; }
+.admin-add-row select.input { flex: 0 0 120px; }
+.admin-add-row .btn { width: auto; padding: 9px 20px; flex: 0 0 auto; }
+.admin-status { margin-top: 10px; font-size: 13px; min-height: 16px; }
+
+.admin-list-head { display: flex; align-items: center; gap: 10px; margin: 0 2px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--text-2); }
+
+.admin-user { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; margin-bottom: 9px; transition: border-color var(--t); }
+.admin-user:hover { border-color: var(--border-2); }
+.admin-user-top { display: flex; align-items: center; gap: 12px; }
+.admin-user .bot-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-user .you-tag { color: var(--text-3); font-weight: 400; }
+.admin-user-actions { display: flex; align-items: center; gap: 6px; }
+.admin-user-actions .role-select { width: 104px; }
+.admin-ips { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.7; display: flex; gap: 6px; color: var(--text-3); }
+.admin-ips.warn { color: #fbbf24; }
+
+/* ── Tab views (Settings / Admin / Intel / Metrics) ── */
+#settings-view, #admin-view, #intel-view, #metrics-view, #carto-view { overflow-y: auto; padding: 20px 22px 40px; }
+
+/* cartography board */
+.carto-wrap { position: relative; height: 62vh; min-height: 360px; background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+#carto-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+#carto-canvas:active { cursor: grabbing; }
+.carto-hud { position: absolute; top: 10px; left: 12px; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); background: rgba(8,8,13,.72); padding: 4px 9px; border-radius: 6px; pointer-events: none; }
+.carto-legend { position: absolute; bottom: 10px; left: 12px; display: flex; gap: 12px; font-size: 11px; color: var(--text-2); background: rgba(8,8,13,.72); padding: 5px 10px; border-radius: 6px; pointer-events: none; }
+.carto-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.carto-cand { display: flex; align-items: center; gap: 11px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-1); margin-bottom: 7px; cursor: pointer; }
+.carto-cand:hover { border-color: var(--indigo); }
+.carto-cand .co { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.carto-cand .sig { font-size: 11px; color: var(--amber); }
+.carto-cand .far { font-size: 10.5px; color: var(--text-3); margin-left: auto; white-space: nowrap; }
+.view-wrap { max-width: 820px; margin: 0 auto; }
+.view-wrap.wide { max-width: 1020px; }
+.view-head { margin-bottom: 16px; }
+.view-head h2 { font-size: 18px; font-weight: 600; }
+.view-head .desc { font-size: 12.5px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
+.view-head .desc b { color: var(--text-2); font-weight: 500; }
+
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar .grow { flex: 1; min-width: 120px; }
+.toolbar .muted { font-size: 12px; color: var(--text-3); }
+
+/* settings sections */
+.section { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 15px 17px; margin-bottom: 12px; }
+.section h3 { font-size: 13.5px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.section .desc { font-size: 12px; color: var(--text-3); line-height: 1.5; margin-bottom: 12px; }
+.section .desc b { color: var(--text-2); font-weight: 500; }
+.tag-restart { font-size: 10px; color: var(--amber); background: rgba(245,158,11,.13); padding: 2px 7px; border-radius: 5px; font-weight: 500; }
+
+/* chips (whitelist / watchlist / proxy access) */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-2); border: 1px solid var(--border-2); padding: 4px 5px 4px 11px; border-radius: 18px; font-size: 12px; }
+.chip .x { cursor: pointer; color: var(--text-3); width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 13px; line-height: 1; }
+.chip .x:hover { background: rgba(239,68,68,.18); color: var(--red); }
+.chip-empty { font-size: 12px; color: var(--text-4); }
+
+/* wealth badge */
+.wealth-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 3px 9px; border-radius: 6px; border: 1px solid; white-space: nowrap; }
+.w-high { color: #f3a0a0; background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.35); }
+.w-medium { color: #f0c178; background: rgba(245,158,11,.13); border-color: rgba(245,158,11,.32); }
+.w-low { color: #b3d98a; background: rgba(132,204,22,.12); border-color: rgba(132,204,22,.3); }
+.w-none { color: var(--text-3); background: var(--bg-2); border-color: var(--border-2); }
+.wealth-score { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.wealth-lowconf { font-size: 9.5px; color: var(--text-4); text-transform: uppercase; letter-spacing: .4px; padding: 2px 7px; border: 1px dashed var(--border-2); border-radius: 6px; white-space: nowrap; }
+
+/* ── Intel player cards (redesigned: scannable row + wealth meter + gear signature) ── */
+.intel-card { background: var(--bg-2, #16161f); border: 1px solid var(--border); border-radius: var(--r-lg, 12px); padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: border-color .12s, background .12s; }
+.intel-card:hover { border-color: var(--border-2); background: rgba(255,255,255,.02); }
+.intel-row { display: flex; align-items: center; gap: 13px; }
+.intel-id { flex: 1; min-width: 0; }
+.intel-name { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; }
+.intel-meta { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+.intel-meta .mono { font-family: var(--mono); }
+/* gear signature — the at-a-glance "is this loot worth chasing" chips */
+.gear-sig { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.gear-chip { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 5px; border: 1px solid; letter-spacing: .2px; white-space: nowrap; }
+.gear-chip.g-neth { color: #e7c6a0; background: rgba(150,95,45,.20); border-color: rgba(190,130,70,.40); }
+.gear-chip.g-dia  { color: #8fe6e0; background: rgba(70,210,200,.12); border-color: rgba(70,210,200,.30); }
+.gear-chip.g-ely  { color: #c3b6f0; background: rgba(99,102,241,.16); border-color: rgba(99,102,241,.36); }
+.gear-chip.g-tot  { color: #f0d97a; background: rgba(240,200,60,.13); border-color: rgba(240,200,60,.30); }
+.gear-chip.g-crys { color: #f2a0c8; background: rgba(240,80,160,.13); border-color: rgba(240,80,160,.30); }
+.gear-chip.g-ench { color: #c9b6ff; background: rgba(160,120,255,.12); border-color: rgba(160,120,255,.30); }
+.gear-none { font-size: 11px; color: var(--text-4); font-style: italic; }
+/* wealth meter — the primary "worth looking into" cue */
+.wealth-col { width: 132px; flex: none; text-align: right; }
+.wealth-num { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--text); line-height: 1; }
+.wealth-num.na { color: var(--text-4); }
+.wealth-num-max { font-size: 11px; font-weight: 400; color: var(--text-4); }
+.wealth-meter { height: 6px; background: rgba(255,255,255,.07); border-radius: 4px; overflow: hidden; margin: 5px 0 4px; }
+.wealth-fill { height: 100%; border-radius: 4px; transition: width .2s; }
+.wealth-fill.w-high   { background: linear-gradient(90deg, #e0574f, #f3a0a0); }
+.wealth-fill.w-medium { background: linear-gradient(90deg, #d9962f, #f0c178); }
+.wealth-fill.w-low    { background: linear-gradient(90deg, #7bb04a, #b3d98a); }
+.wealth-fill.w-none   { background: #3a3a48; }
+.wealth-tag { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.wealth-tag.w-high { color: #f3a0a0; } .wealth-tag.w-medium { color: #f0c178; }
+.wealth-tag.w-low { color: #b3d98a; } .wealth-tag.w-none { color: var(--text-4); }
+.intel-card .chev { color: var(--text-4); font-size: 12px; flex: none; }
+.intel-detail { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+/* wealth breakdown bars (why the score is what it is) */
+.wbreak { margin-bottom: 12px; }
+.wbreak-head { font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.wbreak-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.wbreak-k { width: 82px; flex: none; font-size: 11px; color: var(--text-3); }
+.wbreak-bar { flex: 1; height: 5px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }
+.wbreak-fill { height: 100%; background: linear-gradient(90deg, #4b6bd6, #818cf8); border-radius: 3px; }
+.wbreak-v { width: 26px; flex: none; text-align: right; font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
+/* active-hours histogram */
+.hours-bar { display: flex; align-items: flex-end; gap: 2px; height: 40px; margin-top: 4px; }
+.hours-cell { flex: 1; background: rgba(255,255,255,.06); border-radius: 1px; min-height: 3px; }
+.hours-cell.on { background: #6366f1; }
+.hours-axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-4); margin-top: 2px; }
+.hours-note { font-size: 12px; color: var(--text-4); margin-top: 4px; }
+.intel-actions { margin-top: 12px; display: flex; gap: 8px; }
+/* "Targets only" toggle active state */
+#intel-targets.on { color: #f3a0a0; background: rgba(239,68,68,.14); border-color: rgba(239,68,68,.4); }
+
+/* intel detail key-value grid */
+.kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px 18px; }
+.kv { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kv.full { grid-column: 1 / -1; }
+.kv .k { font-size: 10.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: .3px; }
+.kv .v { font-size: 12.5px; color: var(--text); word-break: break-word; }
+.kv .v.mono { font-family: var(--mono); }
+
+/* metrics stat tiles */
+.stat-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.stat { background: var(--bg-2); border-radius: var(--r-sm); padding: 8px 12px; min-width: 76px; }
+.stat .v { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
+.stat .l { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
+
+/* ── Overview queue block ────────────────── */
+.right-panels #queue-panel { flex: 0 0 auto; max-height: 250px; }
+.queue-note { font-size: 11px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+.np-badge {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .4px; font-weight: 600;
+  color: var(--text-3); background: var(--bg-2); border: 1px solid var(--border-2);
+  padding: 2px 6px; border-radius: 5px; white-space: nowrap;
+}
+.queue-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.queue-row:last-child { border-bottom: none; }
+.q-pos { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--state-queue); min-width: 46px; }
+.q-main { flex: 1; min-width: 0; }
+.q-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-eta { font-size: 11px; color: var(--text-2); font-family: var(--mono); }
+.q-drop { font-size: 10.5px; color: var(--amber); margin-top: 2px; }
+/* Queue progress: how far through the line this bot is (peak position → now). */
+.q-bar { height: 3px; background: rgba(255,255,255,.06); border-radius: 2px; overflow: hidden; margin-top: 5px; }
+.q-fill { height: 100%; background: linear-gradient(90deg, #0e7490, var(--state-queue)); border-radius: 2px; transition: width .5s; }
+.queue-empty { font-size: 12px; color: var(--text-3); padding: 10px 4px; line-height: 1.5; }
+
+/* ── Modal (group create/edit) ───────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; padding: 20px;
+  background: rgba(0, 0, 0, .6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  width: 360px; max-width: 100%; background: var(--bg-1);
+  border: 1px solid var(--border-2); border-radius: var(--r-lg);
+  padding: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+}
+.modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+.modal label { display: block; font-size: 11px; color: var(--text-2); margin: 12px 0 5px; }
+.modal-err { color: var(--red); font-size: 12px; min-height: 16px; margin-top: 10px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+
+/* ── Accessibility: visually-hidden labels ─ */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── Responsive ──────────────────────────── */
+@media (max-width: 1100px) {
+  #main { grid-template-columns: 1fr; grid-template-rows: 380px 1fr; overflow-y: auto; }
+  .right-panels { overflow: visible; }
+  .kpi-strip { grid-template-columns: repeat(3, 1fr); }
+  .kpi-hero { grid-column: 1 / -1; }   /* hero gets its own full-width row */
+}
+@media (max-width: 720px) {
+  .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .kpi-hero { grid-column: 1 / -1; }
+  #header { flex-wrap: wrap; gap: 8px; }
+  .nav-pills { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; flex-wrap: nowrap; }
+  .nav-pills::-webkit-scrollbar { height: 0; }
+  #settings-view, #admin-view, #intel-view, #metrics-view, #carto-view { padding: 14px 12px 32px; }
+  .map-zoom .zbtn { width: 40px; height: 40px; }
+  .kv-grid { grid-template-columns: 1fr; }
+  .stat { flex: 1 1 40%; }
+  .toolbar .grow { flex-basis: 100%; }
+}

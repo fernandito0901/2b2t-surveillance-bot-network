@@ -1,0 +1,13 @@
+# /etc/logrotate.d/2b2t-app — cap the systemd-appended app.log so it can't grow
+# unbounded. systemd holds the file open (StandardOutput=append:), so copytruncate
+# is required. Rotated as root (the file is root-owned, in admin's home dir).
+/home/admin/2b2t/app.log {
+    su root root
+    size 20M
+    rotate 5
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

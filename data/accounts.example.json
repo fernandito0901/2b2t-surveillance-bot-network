@@ -1,0 +1,27 @@
+[
+  {
+    "id": "north-highway-100k",
+    "username": "YourMcAccount1",
+    "role": "monitor",
+    "type": "spot",
+    "spotId": "north-highway-100k",
+    "groupIndex": 0,
+    "tmuxSession": "zn",
+    "port": 25571,
+    "zenithDir": "north",
+    "directIp": true,
+    "proxyHost": null
+  },
+  {
+    "id": "acc-example2",
+    "username": "YourMcAccount2",
+    "type": "spot",
+    "tmuxSession": "zc",
+    "port": 25572,
+    "proxyHost": "PROXY_IP",
+    "proxyPort": 1080,
+    "proxyUser": "PROXY_USER",
+    "proxyPass": "PROXY_PASS",
+    "proxyCountry": "US"
+  }
+]

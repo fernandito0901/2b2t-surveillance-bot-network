@@ -1,0 +1,27 @@
+# === 2b2t dashboard - LIVE HTTPS ===========================================
+# Rendered by ops/enable-https.sh (which replaces __DOMAIN__ with the real
+# subdomain). Caddy automatically obtains and renews a free Let's Encrypt
+# certificate for the host, terminates TLS on :443, and redirects :80 -> :443.
+#
+# Requirements for the cert to issue:
+#   - A DNS A record for __DOMAIN__ pointing at this box's public IP
+#     (YOUR_SERVER_IP), DNS-only (not proxied), so the ACME HTTP-01 challenge
+#     on :80 reaches Caddy.
+#   - Lightsail console firewall allows inbound 80 AND 443.
+__DOMAIN__ {
+	encode zstd gzip
+
+	# WebSocket upgrades (the live dashboard feed) are proxied transparently by
+	# Caddy; Host is preserved upstream so the app's same-origin CSRF check passes.
+	reverse_proxy 127.0.0.1:3000
+
+	# Trim server-identifying noise.
+	header -Server
+
+	log {
+		output file /var/log/caddy/2b2t.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

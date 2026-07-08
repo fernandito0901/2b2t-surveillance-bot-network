@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2b2t Highway Surveillance — Dashboard</title>
+  <meta name="description" content="Real-time monitoring dashboard for 2b2t nether highway surveillance bot network">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ── Header ────────────────────────────────── -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">◈</span>
+          <div>
+            <h1>2b2t Surveillance</h1>
+            <div class="sub" id="header-sub">Highway watch</div>
+          </div>
+        </div>
+      </div>
+      <nav class="nav-pills" role="tablist" aria-label="Dashboard sections">
+        <button type="button" class="tab-btn active" id="tab-dashboard" role="tab" aria-selected="true" aria-controls="main">Overview</button>
+        <button type="button" class="tab-btn" id="tab-intel" data-role="trusted" role="tab" aria-selected="false" aria-controls="intel-view">Intel</button>
+        <button type="button" class="tab-btn" id="tab-carto" data-role="trusted" role="tab" aria-selected="false" aria-controls="carto-view">Map</button>
+        <button type="button" class="tab-btn" id="tab-metrics" data-role="trusted" role="tab" aria-selected="false" aria-controls="metrics-view">Metrics</button>
+        <button type="button" class="tab-btn" id="tab-coverage" data-role="admin" role="tab" aria-selected="false" aria-controls="coverage-view">Coverage</button>
+        <button type="button" class="tab-btn" id="tab-settings" data-role="admin" role="tab" aria-selected="false" aria-controls="settings-view">Settings</button>
+        <button type="button" class="tab-btn" id="tab-admin" data-role="admin" role="tab" aria-selected="false" aria-controls="admin-view">Admin</button>
+      </nav>
+      <div class="header-right">
+        <span class="badge mono" id="fresh-badge" title="Time since the last live data update">—</span>
+        <span class="badge" id="uptime-badge">Uptime: --</span>
+        <span class="connection-indicator" id="ws-status">
+          <span class="dot"></span>
+          <span class="label">Disconnected</span>
+        </span>
+        <span id="user-chip" style="font-size:11px;color:var(--text-2)"></span>
+        <button class="btn-sm" id="btn-logout" title="Sign out">Logout</button>
+      </div>
+    </header>
+
+    <!-- ── KPI strip (Overview) — hero is aggregate-only, safe for viewers ── -->
+    <div class="kpi-strip" id="kpi-strip">
+      <div class="kpi-card kpi-hero" id="kpi-hero" role="status" tabindex="0" title="Fleet health — click to jump to the queue panel">
+        <div class="kpi-label">Fleet status</div>
+        <div class="hero-counts">
+          <span class="hc"><b class="mono" id="hero-inworld">0</b><i class="hc-dot" style="background:var(--state-inworld)"></i>in-world</span>
+          <span class="hc"><b class="mono" id="hero-queue">0</b><i class="hc-dot" style="background:var(--state-queue)"></i>queuing</span>
+          <span class="hc"><b class="mono" id="hero-offline">0</b><i class="hc-dot" style="background:var(--state-offline)"></i>offline</span>
+        </div>
+        <div class="hero-verdict" id="hero-verdict">—</div>
+      </div>
+      <div class="kpi-card kpi-click" id="kpi-card-seen" tabindex="0" title="Unique players seen in the selected range — click for the activity feed"><div class="kpi-label">Seen 24h</div><div class="kpi-value mono" id="kpi-seen">0</div></div>
+      <div class="kpi-card kpi-click" id="kpi-card-wealth" data-role="trusted" tabindex="0" title="Players whose seen gear suggests high wealth — click for Intel"><div class="kpi-label">Likely rich</div><div class="kpi-value red mono" id="kpi-wealth">0</div></div>
+      <div class="kpi-card"><div class="kpi-label">Bots</div><div class="kpi-value mono" id="kpi-bots">0</div></div>
+    </div>
+
+    <!-- ── Main Content ──────────────────────────── -->
+    <main id="main" role="tabpanel" aria-labelledby="tab-dashboard">
+      <!-- Left: Map -->
+      <section class="panel map-panel" id="map-panel">
+        <div class="panel-header">
+          <h2>Highway Map</h2>
+          <div class="map-controls">
+            <select id="time-filter" class="input-sm" aria-label="Sighting time range">
+              <option value="1h">Last Hour</option>
+              <option value="24h" selected>Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="all">All Time</option>
+            </select>
+            <div class="seg" role="group" aria-label="Map dimension">
+              <button id="dim-nether" class="seg-btn active">Nether</button>
+              <button id="dim-overworld" class="seg-btn">Overworld</button>
+            </div>
+            <div class="seg" role="group" aria-label="Map layers">
+              <button id="map-heat" class="seg-btn active" title="Toggle the sighting-density heatmap">Heat</button>
+              <button id="map-radar-toggle" class="seg-btn active" title="Toggle the radar sweep">Radar</button>
+            </div>
+            <!-- Zoom in/out/fit live on the map itself (bottom-right overlay + wheel);
+                 only the content-aware reset stays up here. -->
+            <button id="zoom-reset" class="btn-icon" title="Reset view — re-frame the action">⟲</button>
+          </div>
+        </div>
+        <div class="map-container" id="map-container">
+          <canvas id="nether-map"></canvas>
+          <canvas id="map-radar" class="map-radar" aria-hidden="true"></canvas>
+          <div id="hover-coords" class="hover-coords">X: 0, Z: 0</div>
+          <div id="map-empty-overlay" class="map-empty hidden"></div>
+          <div class="map-zoom" id="map-zoom" role="group" aria-label="Map zoom">
+            <button type="button" class="zbtn" id="map-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            <button type="button" class="zbtn" id="map-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+            <button type="button" class="zbtn" id="map-zoom-fit" title="Fit world border" aria-label="Fit world border">⤢</button>
+          </div>
+          <div id="map-tooltip" class="map-tooltip hidden"></div>
+          <!-- Legend rides ON the map (glass chip, bottom-left) instead of a full-width
+               row below it — that row cost the map ~40px of height for six labels. -->
+          <div class="map-legend">
+            <span class="legend-item"><span class="legend-dot" style="background:#34d399"></span> In-world</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#608ad6;box-shadow:none;border:1.5px dashed #608ad6;background:transparent"></span> Queuing</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> Contact</span>
+            <span class="legend-item"><span class="legend-line" style="background:#6366f1"></span> Highways</span>
+            <span class="legend-item"><span class="legend-line" style="background:#38bdf8"></span> Diamond ◇</span>
+            <span class="legend-item"><span class="legend-line" style="background:#60a5fa"></span> Border</span>
+          </div>
+        </div>
+        <!-- Time scrubber: replay the selected range's sightings on the map. Drag to a
+             moment, or ▶ to sweep the whole range; the right edge (or Live) returns to
+             the live view. Works for every role (it only drives the sighting layer). -->
+        <div class="time-scrub" id="time-scrub">
+          <button type="button" class="btn-icon" id="scrub-play" title="Replay the selected range on the map">▶</button>
+          <input type="range" id="scrub-slider" min="0" max="1000" value="1000" aria-label="Scrub through sighting history">
+          <span class="scrub-label" id="scrub-label">LIVE</span>
+          <button type="button" class="btn-sm" id="scrub-live" style="display:none" title="Return to the live view">Live</button>
+        </div>
+      </section>
+
+      <!-- Right: Panels -->
+      <div class="right-panels">
+        <!-- Fleet queue (visible to all; content is redaction-aware — viewers get a
+             status-only line, trusted+ get per-bot position, ETA + last drop reason) -->
+        <section class="panel" id="queue-panel">
+          <div class="panel-header">
+            <h2>Fleet queue</h2>
+            <span class="queue-note" id="queue-head-note"></span>
+          </div>
+          <div class="panel-body scrollable" id="queue-body">
+            <div class="queue-empty">Loading…</div>
+          </div>
+        </section>
+
+        <!-- Bot Status (hidden from viewers — exposes bot names + IPs) -->
+        <section class="panel" id="bots-panel" data-role="trusted">
+          <div class="panel-header">
+            <h2>Bot Status</h2>
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="btn-sm" id="btn-add-account" data-role="admin" title="Sign in a Minecraft account once via Microsoft — no email or password stored; it's saved by its in-game name">+ Add</button>
+              <span class="count" id="bot-count">0</span>
+            </div>
+          </div>
+          <!-- Add-account progress / device-code prompt lands here (hidden while empty). -->
+          <div id="add-account-status"></div>
+          <div class="panel-body scrollable" id="bot-list">
+            <div class="empty-state">No bots configured</div>
+          </div>
+        </section>
+
+        <!-- Coverage / Groups moved to its own admin-only tab (#coverage-view). -->
+
+        <!-- Activity Feed -->
+        <section class="panel" id="activity-panel">
+          <div class="panel-header">
+            <h2>Activity Feed</h2>
+            <button class="btn-sm" id="clear-activity" title="Clear the on-screen feed only">Clear view</button>
+          </div>
+          <div class="activity-manage" data-role="trusted" style="display:flex;gap:6px;align-items:center;padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.06);flex-wrap:wrap">
+            <span style="font-size:11px;opacity:.6">Delete stored data:</span>
+            <select id="del-range" class="btn-sm" style="font-size:11px">
+              <option value="0">All time</option>
+              <option value="1">Older than 1d</option>
+              <option value="7">Older than 7d</option>
+              <option value="30">Older than 30d</option>
+            </select>
+            <select id="del-spot" class="btn-sm" style="font-size:11px"><option value="">All spots</option></select>
+            <button class="btn-sm" id="del-apply" title="Permanently delete the selected stored activity" style="color:#ef4444">Delete</button>
+          </div>
+          <div class="panel-body scrollable" id="activity-feed">
+            <div class="empty-state">No activity yet</div>
+          </div>
+        </section>
+
+        <!-- (Add Account folded into the Bot Status header — a whole rail panel for
+             one button starved the queue/bots/activity panels of height.) -->
+      </div>
+    </main>
+
+    <!-- ── Settings view ─────────────────────────── -->
+    <main id="settings-view" style="display:none" role="tabpanel" aria-labelledby="tab-settings">
+      <div class="view-wrap">
+        <div class="view-head"><h2>Settings</h2><div class="desc">Surveillance, access, and notifications. Most changes apply live — a couple need a restart.</div></div>
+
+        <div class="section">
+          <h3>Ignore list</h3>
+          <div class="desc">Players the surveillance won't log — your own alts, friends, etc. Applies live.</div>
+          <div class="chips" id="whitelist-items"></div>
+          <label class="sr-only" for="whitelist-input">Add a Minecraft name to the ignore list</label>
+          <div style="display:flex;gap:6px"><input type="text" id="whitelist-input" placeholder="Minecraft name" class="input" style="flex:1"><button class="btn-sm" id="whitelist-add">Add</button></div>
+        </div>
+
+        <div class="section">
+          <h3>Watchlist <span style="font-size:10px;color:#f0c178;background:rgba(245,158,11,.13);padding:2px 8px;border-radius:5px;font-weight:500">priority alerts</span></h3>
+          <div class="desc">Players who trigger a dedicated <b>@here</b> Discord alert the instant they're spotted, and are highlighted gold in the feed + map — rivals, known griefers, anyone you're tracking. Applies live.</div>
+          <div class="chips" id="watchlist-items"></div>
+          <label class="sr-only" for="watchlist-input">Add a Minecraft name to the watchlist</label>
+          <div style="display:flex;gap:6px"><input type="text" id="watchlist-input" placeholder="Minecraft name" class="input" style="flex:1"><button class="btn-sm" id="watchlist-add">Add</button></div>
+        </div>
+
+        <div class="section">
+          <h3>Proxy access</h3>
+          <div class="desc">Minecraft accounts allowed to connect to a proxy and drive a bot. Add your own account(s) — each bot's own account is always allowed. Applies live.</div>
+          <div class="chips" id="proxywl-items"></div>
+          <label class="sr-only" for="proxywl-input">Add a Minecraft name to proxy access</label>
+          <div style="display:flex;gap:6px"><input type="text" id="proxywl-input" placeholder="Minecraft name" class="input" style="flex:1"><button class="btn-sm" id="proxywl-add">Add</button></div>
+        </div>
+
+        <div class="section">
+          <h3>Discord webhook</h3>
+          <div class="desc">Where notifications are sent. Applies live.</div>
+          <label class="sr-only" for="set-webhook">Discord webhook URL</label>
+          <input type="text" id="set-webhook" placeholder="https://discord.com/api/webhooks/..." class="input" style="width:100%">
+        </div>
+
+        <div class="section">
+          <h3>Discord sighting alerts</h3>
+          <div class="desc">How much player-sighting traffic reaches Discord. <b>Off</b> sends only watchlist + ops alerts (drops, in-world, login) — recommended on busy highways. <b>On exit</b> sends one ping per completed pass (with direction + speed). <b>Every sighting</b> also pings on entry. The dashboard feed + map always log everything either way. Applies live.</div>
+          <label class="sr-only" for="set-sightings">Discord sighting alert level</label>
+          <select id="set-sightings" class="input" style="width:100%">
+            <option value="off">Off — watchlist + ops alerts only (recommended)</option>
+            <option value="exit">On exit — one ping per pass</option>
+            <option value="all">Every sighting — enter + exit</option>
+          </select>
+        </div>
+
+        <div class="section">
+          <h3>Owner IGN</h3>
+          <div class="desc">Your main Minecraft account. It is always ignored by the surveillance (never logged or alerted) and gets proxy drive access by default. Applies live.</div>
+          <label class="sr-only" for="set-owner">Owner in-game name</label>
+          <input type="text" id="set-owner" placeholder="YourMinecraftName" class="input" style="width:100%">
+        </div>
+
+        <div class="section">
+          <h3>Monitor identity <span class="tag-restart">restart to apply</span></h3>
+          <div class="desc">The shared offline IGN that spectates the alts.</div>
+          <label class="sr-only" for="set-monitor">Monitor identity in-game name</label>
+          <input type="text" id="set-monitor" placeholder="MonitorIGN" class="input" style="width:100%">
+        </div>
+
+        <div class="section">
+          <h3>Activity retention <span class="tag-restart">restart to apply</span></h3>
+          <div class="desc">Auto-delete activity older than this many days on startup (0 = keep forever).</div>
+          <label class="sr-only" for="set-retention">Activity retention in days</label>
+          <input type="number" id="set-retention" min="0" class="input" style="width:120px">
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;margin-top:6px">
+          <button class="btn" id="settings-save" style="width:auto;padding:9px 24px">Save settings</button>
+          <span id="settings-status" style="font-size:13px"></span>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── Admin view (user management) ───────────── -->
+    <main id="admin-view" style="display:none" role="tabpanel" aria-labelledby="tab-admin">
+      <div class="view-wrap">
+        <div class="view-head">
+          <h2>Dashboard users</h2>
+          <div class="desc">Access tiers, low → high. <b>Viewer</b>: map &amp; activity only. <b>Trusted</b>: + place/manage bots, groups, activity. <b>Admin</b>: + Minecraft accounts, re-login, settings &amp; users. <b>Owner</b>: + login-IP history and managing other owners. <span id="admin-owner-note"></span></div>
+        </div>
+
+        <!-- Role census — one glance at who holds what. -->
+        <div class="admin-stats" id="admin-stats"></div>
+
+        <!-- Add-user card -->
+        <div class="section admin-add">
+          <h3>Add user</h3>
+          <div class="desc">Create a login. Roles can be changed any time from the list below.</div>
+          <div class="admin-add-row">
+            <input type="text" id="newuser-name" placeholder="username" class="input" autocomplete="off">
+            <input type="password" id="newuser-pass" placeholder="password (min 12)" class="input" autocomplete="new-password">
+            <select id="newuser-role" class="input">
+              <option value="viewer">viewer</option>
+              <option value="trusted">trusted</option>
+              <option value="admin">admin</option>
+              <option value="owner" data-role="owner">owner</option>
+            </select>
+            <button class="btn" id="btn-add-user">Add user</button>
+          </div>
+          <div id="user-status" class="admin-status"></div>
+        </div>
+
+        <div class="admin-list-head">
+          <span>Users</span><span class="count" id="user-count">0</span>
+        </div>
+        <div id="user-list"></div>
+      </div>
+    </main>
+    <!-- ── Intel view (player intelligence profiles) ─────────── -->
+    <main id="intel-view" style="display:none" role="tabpanel" aria-labelledby="tab-intel">
+      <div class="view-wrap wide">
+        <div class="view-head"><h2>Player intelligence</h2><div class="desc">Aggregated from logged sightings — who travels the highways, where, how often, and estimated wealth. Click a player for detail.</div></div>
+        <div class="toolbar">
+          <input type="text" id="intel-search" placeholder="Search player…" class="input-sm grow">
+          <select id="intel-range" class="input-sm">
+            <option value="all" selected>All time</option>
+            <option value="7d">Last 7 days</option>
+            <option value="24h">Last 24h</option>
+            <option value="1h">Last hour</option>
+          </select>
+          <select id="intel-sort" class="input-sm">
+            <option value="wealth" selected>Highest wealth</option>
+            <option value="recent">Most recent</option>
+            <option value="count">Most sightings</option>
+          </select>
+          <button class="btn-sm" id="intel-targets" aria-pressed="false" title="Show only likely-rich targets (High/Medium wealth)">🎯 Targets only</button>
+          <button class="btn-icon" id="intel-refresh" title="Refresh">↻</button>
+        </div>
+        <div class="muted" id="intel-summary" style="margin-bottom:12px"></div>
+        <div id="intel-list"><div class="empty-state">Loading…</div></div>
+      </div>
+    </main>
+
+    <!-- ── Metrics view (operations / observability) ──────────── -->
+    <main id="metrics-view" style="display:none" role="tabpanel" aria-labelledby="tab-metrics">
+      <div class="view-wrap wide">
+        <div class="view-head"><h2>Operations &amp; metrics</h2><div class="desc">Per-account availability, drops, queue trend, and a 24h state timeline — see at a glance whether the bots held overnight.</div></div>
+        <div class="toolbar">
+          <!-- Metrics are kept in memory for ≤48h, so the selector is capped honestly
+               to windows that actually exist (no "7d" that silently returns ≤48h). -->
+          <select id="metrics-range" class="input-sm" aria-label="Metrics time range">
+            <option value="1h">Last hour</option>
+            <option value="6h">Last 6h</option>
+            <option value="24h" selected>Last 24h</option>
+          </select>
+          <button class="btn-icon" id="metrics-refresh" title="Refresh">↻</button>
+          <span class="muted grow" id="metrics-pool" style="text-align:right"></span>
+        </div>
+        <div id="metrics-list"><div class="empty-state">Loading…</div></div>
+        <div style="font-size:15px;font-weight:600;margin:20px 0 10px;color:var(--text)">Recent events</div>
+        <div id="metrics-events" class="scrollable" style="max-height:320px"></div>
+      </div>
+    </main>
+
+    <!-- ── Cartography view (Xaero stash-hunting map) ──────────── -->
+    <main id="carto-view" style="display:none" role="tabpanel" aria-labelledby="tab-carto">
+      <div class="view-wrap wide">
+        <div class="view-head"><h2>Cartography</h2><div class="desc">Upload your Xaero World Map data and it stitches into a stash-hunting board — explored coverage, flagged base/stash regions (player-placed blocks), and our highway sightings overlaid. Uploads accumulate, so the map builds up bit by bit.</div></div>
+        <div class="toolbar">
+          <select id="carto-dim" class="input-sm">
+            <option value="nether" selected>Nether</option>
+            <option value="overworld">Overworld</option>
+            <option value="end">End</option>
+          </select>
+          <button class="btn-icon" id="carto-refresh" title="Refresh">↻</button>
+          <button class="btn-icon" id="carto-fit" title="Fit view to all data">⊡</button>
+          <label class="btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px" title="Show rendered terrain (zoom in to load tiles)"><input type="checkbox" id="carto-terrain" checked style="margin:0;cursor:pointer"> Terrain</label>
+          <label class="btn-sm" style="cursor:pointer" title="Zip your xaero/world-map/<server>/<DIM>/mw$default folder and upload the .zip">⬆ Upload Xaero data<input type="file" id="carto-file" accept=".zip" style="display:none"></label>
+          <span class="muted" id="carto-upload-status"></span>
+          <span class="muted grow" id="carto-stats" style="text-align:right"></span>
+        </div>
+        <div class="carto-wrap">
+          <canvas id="carto-canvas"></canvas>
+          <div class="carto-hud" id="carto-hud">—</div>
+          <div class="map-zoom" id="carto-zoom" role="group" aria-label="Map zoom">
+            <button type="button" class="zbtn" id="carto-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            <button type="button" class="zbtn" id="carto-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+            <button type="button" class="zbtn" id="carto-zoom-fit" title="Fit view to all data" aria-label="Fit view">⤢</button>
+          </div>
+          <div class="carto-legend">
+            <span><i style="background:#2a3550"></i>explored</span>
+            <span><i style="background:#60a5fa"></i>highway</span>
+            <span><i style="background:#f59e0b"></i>stash chunk</span>
+            <span><i style="background:#22c55e"></i>sighting</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin:18px 0 10px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:600;color:var(--text)">Candidate stashes</span>
+          <span class="muted" id="carto-cand-count"></span>
+          <span style="flex:1"></span>
+          <select id="carto-sort" class="input-sm" title="Sort order"><option value="strength">Strongest</option><option value="dist">Farthest out</option></select>
+          <select id="carto-filter" class="input-sm" title="Filter by signal block"><option value="">All signals</option></select>
+          <button class="btn-sm" id="carto-export" title="Download these as a Xaero waypoints file">⬇ Waypoints</button>
+        </div>
+        <div id="carto-candidates" class="scrollable" style="max-height:340px"><div class="empty-state">Upload Xaero data to begin.</div></div>
+      </div>
+    </main>
+
+    <!-- ── Coverage / Groups view (admin-only; feeds a future coverage-coordinator system) ── -->
+    <main id="coverage-view" style="display:none" role="tabpanel" aria-labelledby="tab-coverage">
+      <div class="view-wrap wide">
+        <div class="view-head">
+          <h2>Coverage / Groups</h2>
+          <div class="desc">Group accounts by highway location and a desired in-world count. Informational for now — a coverage-coordinator that keeps N assets in-world per group is planned; this tab is where it'll live.</div>
+        </div>
+        <div class="toolbar"><button class="btn-sm" id="btn-new-group" title="Create a coverage group">+ New Group</button></div>
+        <div id="coverage-list"><div class="empty-state">No groups yet</div></div>
+      </div>
+    </main>
+
+    <!-- ── Group create/edit modal (replaces the old chained prompt() flow) ── -->
+    <div id="group-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="group-modal-title">
+      <div class="modal">
+        <h3 id="group-modal-title">New group</h3>
+        <label for="gm-name">Name</label>
+        <input type="text" id="gm-name" class="input" placeholder='e.g. "+Z 5k highway"' style="width:100%">
+        <div style="display:flex;gap:10px;margin-top:2px">
+          <div style="flex:1">
+            <label for="gm-x">Nether X</label>
+            <input type="number" inputmode="numeric" id="gm-x" class="input" style="width:100%">
+          </div>
+          <div style="flex:1">
+            <label for="gm-z">Nether Z</label>
+            <input type="number" inputmode="numeric" id="gm-z" class="input" style="width:100%">
+          </div>
+        </div>
+        <label for="gm-desired">Coverage target (accounts in-world here)</label>
+        <input type="number" inputmode="numeric" min="1" id="gm-desired" class="input" style="width:120px">
+        <div id="gm-error" class="modal-err"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn-sm" id="gm-cancel">Cancel</button>
+          <button type="button" class="btn" id="gm-save" style="width:auto;padding:9px 22px">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
